@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="MEBBİS Ödenek Takip Modülü için PDF faturalardan UBL-TR XML dosyası oluşturucu.">
+    <title>MEBBİS XML Fatura Oluşturucu</title>
+
+    <!-- Stil -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- pdf.js (Mozilla CDN — klasik versiyon) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+
+        <!-- ─── BAŞLIK ──────────────────────────────────────── -->
+        <header class="app-header">
+            <h1><span class="icon">📄</span>MEBBİS XML Fatura Oluşturucu</h1>
+            <p>PDF faturanızı yükleyin → Verilerinizi kontrol edin → MEBBİS-uyumlu XML indirin</p>
+        </header>
+
+        <!-- ─── DOSYA YÜKLEME ───────────────────────────────── -->
+        <div id="uploadZone" class="upload-zone">
+            <span class="upload-icon">📁</span>
+            <p id="fileName">PDF dosyasını sürükleyip bırakın veya tıklayarak seçin</p>
+            <span class="upload-hint">Desteklenen: Elektrik ve Telefon Faturaları (.pdf)</span>
+            <input type="file" id="pdfFileInput" accept="application/pdf">
+        </div>
+        
+        <div class="manual-entry-actions" style="text-align: center; margin-top: 15px;">
+            <p style="margin-bottom: 10px; font-size: 0.9rem; color: var(--text-secondary);">Faturanız okunamıyorsa bilgileri manuel olarak girebilirsiniz:</p>
+            <button id="btnManualElektrik" class="btn btn-secondary" style="margin: 0 5px;">⚡ Elektrik Faturası Gir</button>
+            <button id="btnManualDogalgaz" class="btn btn-secondary" style="margin: 0 5px;">🔥 Doğalgaz Faturası Gir</button>
+            <button id="btnManualTelefon" class="btn btn-secondary" style="margin: 0 5px;">📞 Telefon Faturası Gir</button>
+        </div>
+
+        <!-- ─── DURUM ÇUBUĞU ────────────────────────────────── -->
+        <div id="statusBar" class="status-bar"></div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!--  AYRIŞTIRILAN VERİLER (PDF okunduktan sonra görünür)  -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="parsedContent" class="parsed-content">
+
+            <!-- ─── FATURA BİLGİLERİ ───────────────────────── -->
+            <div class="section">
+                <div class="section-header">
+                    <span class="section-icon">📋</span>
+                    Fatura Bilgileri
+                </div>
+                <div class="section-body">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="faturaNo">Fatura No</label>
+                            <input type="text" id="faturaNo">
+                            <span class="field-hint">MEBBİS: txtFaturaNumarasiKayit</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="ettn">ETTN (UUID)</label>
+                            <input type="text" id="ettn">
+                        </div>
+                        <div class="form-group">
+                            <label for="faturaTarihi">Fatura Tarihi</label>
+                            <input type="date" id="faturaTarihi">
+                            <span class="field-hint">MEBBİS: txtFaturaTarihiKayit</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="sonOdemeTarihi">Son Ödeme Tarihi</label>
+                            <input type="date" id="sonOdemeTarihi">
+                            <span class="field-hint">MEBBİS: txtSonOdemeTarihiKayit</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="donemBaslangic">İlk Okuma Tarihi</label>
+                            <input type="date" id="donemBaslangic">
+                            <span class="field-hint">MEBBİS: txtIlkOkumaTarihiKayit</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="donemBitis">Son Okuma Tarihi</label>
+                            <input type="date" id="donemBitis">
+                            <span class="field-hint">MEBBİS: txtSonOkumaTarihiKayit</span>
+                        </div>
+                        <div class="form-group" id="tuketimGroup" style="display:none;">
+                            <label for="tuketimMiktari">Tüketim Miktarı (kWh)</label>
+                            <input type="text" id="tuketimMiktari" inputmode="decimal">
+                            <span class="field-hint">MEBBİS: txtTuketimMiktariKayit</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ─── MALİ BİLGİLER ──────────────────────────── -->
+            <div class="section">
+                <div class="section-header">
+                    <span class="section-icon">💰</span>
+                    Mali Bilgiler
+                </div>
+                <div class="section-body">
+                    <div class="form-grid">
+                        <div class="form-group calc-group">
+                            <label for="matrah">Matrah (Vergisiz Tutar)</label>
+                            <input type="text" id="matrah" inputmode="decimal">
+                            <span class="field-hint">MEBBİS: txtMatrahTutarKayit</span>
+                        </div>
+                        <div class="form-group calc-group">
+                            <label>&nbsp;</label>
+                            <div style="display:flex; gap:0.5rem;">
+                                <div style="flex:1;">
+                                    <label for="kdvOran" style="font-size:0.7rem;">KDV %</label>
+                                    <input type="number" id="kdvOran" value="20" min="0" max="100" style="margin-top:0.2rem;">
+                                </div>
+                                <div style="flex:1;">
+                                    <label for="oivOran" style="font-size:0.7rem;">ÖİV %</label>
+                                    <input type="number" id="oivOran" value="10" min="0" max="100" style="margin-top:0.2rem;">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group calc-group">
+                            <label for="kdvTutar">KDV Tutarı</label>
+                            <input type="text" id="kdvTutar" inputmode="decimal">
+                            <span class="field-hint">MEBBİS: txtKdvtutarKayit</span>
+                        </div>
+                        <div class="form-group calc-group">
+                            <label for="oivTutar">ÖİV Tutarı</label>
+                            <input type="text" id="oivTutar" inputmode="decimal">
+                            <span class="field-hint">MEBBİS: txtOzelIletisimVargisiKayit</span>
+                        </div>
+                        <div class="form-group calc-group">
+                            <label for="toplamVergi">Toplam Vergi</label>
+                            <input type="text" id="toplamVergi" class="auto-calc" readonly>
+                            <span class="field-hint">Otomatik: KDV + ÖİV</span>
+                        </div>
+                        <div class="form-group calc-group">
+                            <label for="faturaTutari">Fatura Tutarı (Vergili)</label>
+                            <input type="text" id="faturaTutari" class="auto-calc" readonly>
+                            <span class="field-hint">Otomatik: Matrah + Vergiler</span>
+                        </div>
+                        <div class="form-group calc-group">
+                            <label for="oncekiDevir">Önceki Aydan Devir</label>
+                            <input type="text" id="oncekiDevir" inputmode="decimal">
+                        </div>
+                        <div class="form-group calc-group">
+                            <label for="gelecekDevir">Gelecek Aya Devir (-)</label>
+                            <input type="text" id="gelecekDevir" inputmode="decimal">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="odenecekTutar">Ödenecek Tutar (Genel Toplam)</label>
+                            <input type="text" id="odenecekTutar" style="font-size:1.1rem; font-weight:700; color:var(--success);">
+                            <span class="field-hint">Fatura üzerindeki nihai rakam</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ─── ALICI BİLGİLERİ ────────────────────────── -->
+            <div class="section">
+                <div class="section-header">
+                    <span class="section-icon">🏫</span>
+                    Alıcı Bilgileri (Kurum)
+                </div>
+                <div class="section-body">
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label for="aliciUnvan">Kurum Unvanı</label>
+                            <input type="text" id="aliciUnvan">
+                        </div>
+                        <div class="form-group">
+                            <label for="aliciVkn">Vergi / TCKN</label>
+                            <input type="text" id="aliciVkn">
+                        </div>
+                        <div class="form-group">
+                            <label for="aliciVergiDairesi">Vergi Dairesi</label>
+                            <input type="text" id="aliciVergiDairesi">
+                        </div>
+                        <div class="form-group">
+                            <label for="aliciHizmetNo">Hizmet No</label>
+                            <input type="text" id="aliciHizmetNo">
+                        </div>
+                        <div class="form-group">
+                            <label for="aliciSehir">Şehir</label>
+                            <input type="text" id="aliciSehir">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="aliciAdres">Adres</label>
+                            <input type="text" id="aliciAdres">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ─── BUTONLAR ────────────────────────────────── -->
+            <div class="actions">
+                <button id="btnDownloadXml" class="btn btn-primary" disabled>
+                    📥 XML İndir
+                </button>
+                <button id="btnReset" class="btn btn-secondary">
+                    🔄 Sıfırla
+                </button>
+            </div>
+
+        </div><!-- /parsedContent -->
+
+        <!-- ─── FOOTER ──────────────────────────────────────── -->
+        <footer class="app-footer">
+            MEBBİS Ödenek Takip Modülü için XML Fatura Oluşturucu &middot; Tüm veriler tarayıcınızda işlenir, sunucuya gönderilmez.
+        </footer>
+
+    </div>
+
+    <!-- ─── JavaScript Dosyaları (Sıra Önemli!) ──────────── -->
+    <script src="js/utils/dateUtils.js"></script>
+    <script src="js/utils/numberUtils.js"></script>
+    <script src="js/parsers/BaseFaturaParser.js"></script>
+    <script src="js/parsers/TelefonFaturasiParser.js"></script>
+    <script src="js/parsers/ElektrikFaturasiParser.js"></script>
+    <script src="js/parsers/DogalgazFaturasiParser.js"></script>
+    <script src="js/generators/UblXmlGenerator.js"></script>
+
+    <!-- pdf.js Worker Ayarı -->
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
